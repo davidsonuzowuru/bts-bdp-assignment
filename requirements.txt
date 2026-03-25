@@ -15,7 +15,7 @@ pytest-cov>=4,<5
 pytest-env>=0.8,<1
 pytest-asyncio>=0.21,<1
 ruff>=0.1,<1
-moto>=4,<5
+moto[s3,all]>=4.2.0
 neo4j>=5,<6
 beautifulsoup4==4.14.3
 boto3==1.42.72
