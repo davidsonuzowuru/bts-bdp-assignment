@@ -120,6 +120,13 @@ STAGES: dict[str, list[PipelineStage]] = {
             finished_at=None,
             logs_url="/api/s9/pipelines/run-003/stages/test/logs",
         ),
+        PipelineStage(
+            name="build",
+            status="pending",
+            started_at=datetime(2026, 3, 12, 8, 3, 0),
+            finished_at=None,
+            logs_url="/api/s9/pipelines/run-003/stages/build/logs",
+        ),
     ],
 }
 
