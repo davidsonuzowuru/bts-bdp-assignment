@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 s9 = APIRouter(
@@ -32,6 +32,98 @@ class PipelineStage(BaseModel):
     logs_url: str
 
 
+PIPELINES: list[PipelineRun] = [
+    PipelineRun(
+        id="run-001",
+        repository="bts-bdp-assignment",
+        branch="main",
+        status="success",
+        triggered_by="push",
+        started_at=datetime(2026, 3, 10, 10, 0, 0),
+        finished_at=datetime(2026, 3, 10, 10, 5, 30),
+        stages=["lint", "test", "build"],
+    ),
+    PipelineRun(
+        id="run-002",
+        repository="bts-bdp-assignment",
+        branch="feature/s9",
+        status="failure",
+        triggered_by="pull_request",
+        started_at=datetime(2026, 3, 11, 9, 0, 0),
+        finished_at=datetime(2026, 3, 11, 9, 3, 0),
+        stages=["lint", "test"],
+    ),
+    PipelineRun(
+        id="run-003",
+        repository="bts-bdp-assignment",
+        branch="main",
+        status="running",
+        triggered_by="push",
+        started_at=datetime(2026, 3, 12, 8, 0, 0),
+        finished_at=None,
+        stages=["lint", "test", "build"],
+    ),
+]
+
+STAGES: dict[str, list[PipelineStage]] = {
+    "run-001": [
+        PipelineStage(
+            name="lint",
+            status="success",
+            started_at=datetime(2026, 3, 10, 10, 0, 0),
+            finished_at=datetime(2026, 3, 10, 10, 0, 45),
+            logs_url="/api/s9/pipelines/run-001/stages/lint/logs",
+        ),
+        PipelineStage(
+            name="test",
+            status="success",
+            started_at=datetime(2026, 3, 10, 10, 0, 45),
+            finished_at=datetime(2026, 3, 10, 10, 3, 20),
+            logs_url="/api/s9/pipelines/run-001/stages/test/logs",
+        ),
+        PipelineStage(
+            name="build",
+            status="success",
+            started_at=datetime(2026, 3, 10, 10, 3, 20),
+            finished_at=datetime(2026, 3, 10, 10, 5, 30),
+            logs_url="/api/s9/pipelines/run-001/stages/build/logs",
+        ),
+    ],
+    "run-002": [
+        PipelineStage(
+            name="lint",
+            status="success",
+            started_at=datetime(2026, 3, 11, 9, 0, 0),
+            finished_at=datetime(2026, 3, 11, 9, 0, 30),
+            logs_url="/api/s9/pipelines/run-002/stages/lint/logs",
+        ),
+        PipelineStage(
+            name="test",
+            status="failure",
+            started_at=datetime(2026, 3, 11, 9, 0, 30),
+            finished_at=datetime(2026, 3, 11, 9, 3, 0),
+            logs_url="/api/s9/pipelines/run-002/stages/test/logs",
+        ),
+    ],
+    "run-003": [
+        PipelineStage(
+            name="lint",
+            status="success",
+            started_at=datetime(2026, 3, 12, 8, 0, 0),
+            finished_at=datetime(2026, 3, 12, 8, 0, 40),
+            logs_url="/api/s9/pipelines/run-003/stages/lint/logs",
+        ),
+        PipelineStage(
+            name="test",
+            status="running",
+            started_at=datetime(2026, 3, 12, 8, 0, 40),
+            finished_at=None,
+            logs_url="/api/s9/pipelines/run-003/stages/test/logs",
+        ),
+    ],
+}
+
+
 @s9.get("/pipelines")
 def list_pipelines(
     repository: str | None = None,
@@ -39,33 +131,20 @@ def list_pipelines(
     num_results: int = 100,
     page: int = 0,
 ) -> list[PipelineRun]:
-    """List CI/CD pipeline runs with their status.
+    results = sorted(PIPELINES, key=lambda p: p.started_at, reverse=True)
 
-    Returns a list of pipeline runs, optionally filtered by repository and status.
-    Ordered by started_at descending (most recent first).
-    Paginated with `num_results` per page and `page` number (0-indexed).
+    if repository:
+        results = [p for p in results if p.repository == repository]
 
-    Valid statuses: "success", "failure", "running", "pending"
-    Valid triggered_by values: "push", "pull_request", "schedule", "manual"
-    """
-    # TODO: Return pipeline runs from your data source
-    # TODO: Filter by repository if provided
-    # TODO: Filter by status if status_filter is provided
-    # TODO: Order by started_at descending
-    # TODO: Apply pagination
-    return []
+    if status_filter:
+        results = [p for p in results if p.status == status_filter]
+
+    start = page * num_results
+    return results[start : start + num_results]
 
 
 @s9.get("/pipelines/{pipeline_id}/stages")
 def get_pipeline_stages(pipeline_id: str) -> list[PipelineStage]:
-    """Get the stages of a specific pipeline run.
-
-    Returns the stages in execution order.
-    Each stage has a name, status, timestamps, and a logs URL.
-
-    Typical stages: "lint", "test", "build", "deploy"
-    """
-    # TODO: Look up the pipeline run by pipeline_id
-    # TODO: Return the stages with their details
-    # TODO: Return 404 if pipeline_id not found
-    return []
+    if pipeline_id not in STAGES:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return STAGES[pipeline_id]
