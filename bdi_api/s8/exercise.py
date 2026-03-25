@@ -1,9 +1,13 @@
+import sqlite3
+
 from fastapi import APIRouter, status
 from pydantic import BaseModel
 
 from bdi_api.settings import Settings
 
 settings = Settings()
+
+DB_PATH = settings.db_url.replace("sqlite:///", "")
 
 s8 = APIRouter(
     responses={
@@ -32,31 +36,43 @@ class AircraftCO2Return(BaseModel):
 
 @s8.get("/aircraft/")
 def list_aircraft(num_results: int = 100, page: int = 0) -> list[AircraftReturn]:
-    """List all aircraft with enriched data, ordered by ICAO ascending.
-
-    The data should come from the silver layer (processed by the Airflow DAG).
-    Paginated with `num_results` per page and `page` number (0-indexed).
-    """
-    # TODO: Read enriched aircraft data from your storage (S3 silver, database, or local)
-    # TODO: Order by ICAO ascending
-    # TODO: Apply pagination using num_results and page
-    return []
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    offset = page * num_results
+    rows = con.execute(
+        "SELECT icao, registration, type, owner, manufacturer, model "
+        "FROM s8_aircraft ORDER BY icao ASC LIMIT ? OFFSET ?",
+        (num_results, offset),
+    ).fetchall()
+    con.close()
+    return [AircraftReturn(**dict(row)) for row in rows]
 
 
 @s8.get("/aircraft/{icao}/co2")
 def get_aircraft_co2(icao: str, day: str) -> AircraftCO2Return:
-    """Calculate CO2 emissions for a given aircraft on a specific day.
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
 
-    Computation:
-    - Each row in the tracking data represents a 5-second observation
-    - hours_flown = (number_of_observations * 5) / 3600
-    - Look up `galph` (gallons per hour) from fuel consumption rates using the aircraft's ICAO type
-    - fuel_used_kg = hours_flown * galph * 3.04
-    - co2_tons = (fuel_used_kg * 3.15) / 907.185
-    - If fuel consumption rate is not available for this aircraft type, return None for co2
-    """
-    # TODO: Count observations for this ICAO on the given day
-    # TODO: Calculate hours_flown
-    # TODO: Look up fuel consumption rate by aircraft type
-    # TODO: Calculate CO2 emissions
-    return AircraftCO2Return(icao=icao, hours_flown=0.0, co2=None)
+    # Count observations for this aircraft on this day
+    row = con.execute(
+        "SELECT COUNT(*) as cnt, MAX(type) as type FROM s8_observations WHERE icao = ? AND day = ?",
+        (icao, day),
+    ).fetchone()
+
+    count = row["cnt"] if row else 0
+    aircraft_type = row["type"] if row else None
+
+    hours_flown = (count * 5) / 3600
+
+    co2 = None
+    if aircraft_type:
+        fuel_row = con.execute(
+            "SELECT galph FROM s8_fuel_rates WHERE type = ?",
+            (aircraft_type,),
+        ).fetchone()
+        if fuel_row and fuel_row["galph"] is not None:
+            fuel_used_kg = hours_flown * float(fuel_row["galph"]) * 3.04
+            co2 = (fuel_used_kg * 3.15) / 907.185
+
+    con.close()
+    return AircraftCO2Return(icao=icao, hours_flown=hours_flown, co2=co2)
